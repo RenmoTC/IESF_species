@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Species Details</title>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { font-family:'Segoe UI',sans-serif; margin:0; background: #ededed; }
+    .info-map-container { display:flex; }
+    .info-panel { background:#fff; width: 340px; padding:20px 20px 24px 20px; display: flex; flex-direction: column; min-height:100vh;}
+    .back-btn { background:#eee; color:#333; border:none; border-radius:7px; padding:8px 18px; font-size:1em; margin-bottom:16px; cursor:pointer;}
+    .info-img { width: 200px; border-radius: 11px; margin-bottom:18px;}
+    .info-title { font-size: 2em; font-weight: 700; margin: 12px 0 7px 0; }
+    .info-section { margin-top: 13px;}
+    .info-label { color: #a38a22; font-weight: 500;}
+    .info-value { margin-left:0.6em; color:#222;}
+    .desc { margin-top: 18px; color: #333; line-height:1.4; }
+    .info-audio { width: 200px; margin: 16px 0 0 0; }
+    #map { flex:1; min-height:100vh; }
+    .button-bar { margin-top:28px; margin-bottom:10px; display:flex; flex-wrap:wrap; gap:7px;}
+    .compare-modal { display:none; position:fixed; z-index:99; left:0; top:0; width:100vw; height:100vh; background:#0009; align-items:center; justify-content:center; }
+    .compare-box { background:#fff; border-radius:14px; padding:28px; display:flex; gap:36px;}
+    .compare-panel { width:290px; }
+    .compare-close { position:absolute; top:24px; right:30px; font-size:2em; color:#444; cursor:pointer;}
+    #filterInput { margin-top: 8px; margin-bottom:22px; width:100%; font-size:1.08em; padding:7px 10px; border-radius:7px; border:1px solid #bbb; }
+    .audio-bar { display:flex; align-items:center; margin-bottom:16px; }
+    #audio-toggle { background: none; border: none; cursor: pointer; margin-right: 8px;}
+    .info-title, .info-img, .audio-bar, .info-section, .desc, .info-audio { margin-left:auto; margin-right:auto; display:block;}
+    .db-rec-count { font-size:1em; margin:10px 0 0 0; font-weight:600;}
+    @media (max-width:900px) { .info-map-container {flex-direction:column;} .info-panel{width:100%;min-height:auto;} }
+  </style>
+</head>
+<body>
+  <div class="info-map-container">
+    <div class="info-panel">
+      <button class="back-btn" onclick="window.location.href='index.html'">⬅ Back to List</button>
+      <div id="speciesInfo"></div>
+      <div id="buttonBar" style="margin-top:20px;">
+  <button class="button-15" onclick="downloadCSV()">Download Data</button>
+  <button class="button-15" onclick="shareSpecies()">Share</button>
+</div>
+
+      <div id="dbSnippetArea" style="font-size:.91em; margin-top:6px; color:#999;"></div>
+      <div id="db-rec-count" class="db-rec-count"></div>
+    </div>
+    <div id="map"></div>
+  </div>
+
+  <!-- Compare Modal -->
+  <div class="compare-modal" id="compareModal">
+    <span class="compare-close" onclick="closeCompare()">&times;</span>
+    <div class="compare-box">
+      <div class="compare-panel" id="leftCompare"></div>
+      <div class="compare-panel" id="rightCompare"></div>
+    </div>
+  </div>
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-omnivore@0.3.4/leaflet-omnivore.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script>
+    // --- SUPABASE CONFIG ---
+    const SUPABASE_URL = "https://esyuykkooxyvmtwdyxqv.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzeXV5a2tvb3h5dm10d2R5eHF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQxOTg5MTQsImV4cCI6MjA2OTc3NDkxNH0.OqHPL0h8qQccsPc3jDtGutXOHwVrOZ9avltGpp0qr38";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // --- Compare state ---
+    let comparisonSpecies = [];
+
+    // --- Helper: get species from URL ---
+    function getSpeciesFromUrl() {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get('species');
+    }
+
+    let records = [];
+    let sp = {};
+    let galleryIdx = 0;
+
+    // --- Main ---
+    async function main() {
+      const name = getSpeciesFromUrl();
+      if (!name) {
+        document.getElementById("speciesInfo").innerHTML = "<b>No species specified.</b>";
+        return;
+      }
+      let { data, error } = await supabase.from('species').select('*');
+      if (!data || data.length === 0) {
+        document.getElementById("speciesInfo").innerHTML = "No data found.";
+        return;
+      }
+      // Get all records for this species
+      records = data.filter(sp => (sp.species_full_name||sp.species_name) === name);
+      if (records.length === 0) {
+        document.getElementById("speciesInfo").innerHTML = "<b>Species not found.</b>";
+        return;
+      }
+      sp = records[0];
+      renderInfoPanel(records);
+
+      // --- Map ---
+      let centerLat = records.length > 0 ? records[0].latitude : 44.93471667;
+      let centerLng = records.length > 0 ? records[0].longitude : -77.67658333;
+      let zoomLevel = records.length === 1 ? 13 : 7;
+      let map = L.map('map').setView([44.93471667, -77.67658333], 12);
+
+      const google = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {attribution:'© Google Maps contributors'});
+      const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OpenStreetMap contributors'});
+      const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'Tiles © Esri'});
+      google.addTo(map);
+      let baseMaps = { "Google Maps": google, "OpenStreetMap": osm, "Esri Satellite": esri };
+
+      // --- KML Park Boundary Layer ---
+      const kmlUrl = "https://esyuykkooxyvmtwdyxqv.supabase.co/storage/v1/object/public/birds//Park%20Boundary%20(1).kml";
+      const parkLayer = omnivore.kml(kmlUrl).on('ready', function() {
+        parkLayer.setStyle({color: "#008c4a", weight: 3, fill: false});
+      });
+      parkLayer.addTo(map);
+
+      const categoryAlias = {
+  amphibian: "amphibians",
+  amphibians: "amphibians",
+  mammal: "mammals",
+  mammalia: "mammals",
+  mammaliae: "mammals",
+  bird: "birds",
+  insect: "insect",
+  fish: "fish",
+  reptile: "reptile",
+  invertebrate: "invertebrate",
+  fungi: "fungi",
+  pteridophyte: "pteridophyte",
+  herbaceous: "herbaceous",
+  shrub: "shrub",
+  deciduous: "deciduous",
+  "tall shrub": "tall shrub",
+  "low shrub": "low shrub",
+  submerged: "submerged",
+  emergent: "emergent",
+  floating: "floating",
+  graminioid: "graminioid",
+  conifer: "conifer"
+};
+
+
+      // --- Species Dots Layer (custom icons by species_type) ---
+      const iconMap = {
+        birds:      'https://esyuykkooxyvmtwdyxqv.supabase.co/storage/v1/object/public/birds//bird%20(2).png',
+        mammals:    'https://openmoji.org/data/color/svg/1F42F.svg',
+        amphibians: 'https://esyuykkooxyvmtwdyxqv.supabase.co/storage/v1/object/public/birds//frog%20(1).png',
+        reptile:   'https://openmoji.org/data/color/svg/1F40D.svg',
+        fish:      'https://openmoji.org/data/color/svg/1F41F.svg',
+        insect:    'https://openmoji.org/data/color/svg/1F41B.svg',
+        reptile: 'https://openmoji.org/data/color/svg/1F40D.svg',          // 🐍 Snake
+  invertebrate: 'https://openmoji.org/data/color/svg/1F98B.svg',     // 🦋 Butterfly
+  fungi: 'https://openmoji.org/data/color/svg/1F344.svg',            // 🍄 Mushroom
+  pteridophyte: 'https://openmoji.org/data/color/svg/1FAB4.svg',     // 🪴 Potted plant (approx)
+  herbaceous: 'https://openmoji.org/data/color/svg/1F33F.svg',       // 🌿 Herb
+  shrub: 'https://openmoji.org/data/color/svg/1F333.svg',            // 🌳 Tree
+  'tall shrub': 'https://openmoji.org/data/color/svg/1F332.svg',     // 🌲 Evergreen
+  'low shrub': 'https://openmoji.org/data/color/svg/1F33F.svg',      // 🌿 Herb again
+  deciduous: 'https://openmoji.org/data/color/svg/1F333.svg',        // 🌳
+  submerged: 'https://openmoji.org/data/color/svg/1F30A.svg',        // 🌊 Wave
+  emergent: 'https://openmoji.org/data/color/svg/1FAB6.svg',         // 🪶 Feather (placeholder)
+  floating: 'https://openmoji.org/data/color/svg/1F30A.svg',         // 🌊 again
+  graminioid: 'https://openmoji.org/data/color/svg/1F33E.svg',       // 🌾 Sheaf of rice
+  conifer: 'https://openmoji.org/data/color/svg/1F332.svg',
+        default:   'https://openmoji.org/data/color/svg/1F4A1.svg'
+      };
+      function getSpeciesIcon(category) {
+  if (!category) return L.icon({
+    iconUrl: iconMap.default,
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -28]
+  });
+
+  let keyRaw = category.toLowerCase().trim();
+  let key = categoryAlias[keyRaw] || keyRaw;
+  let iconUrl = iconMap[key];
+
+  if (!iconUrl) {
+    console.warn("No icon found for key:", key);
+  }
+
+  return L.icon({
+    iconUrl: iconUrl || iconMap.default,
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -28]
+  });
+}
+
+
+      let markersLayer = L.layerGroup();
+      records.forEach((rec, i) => {
+        let popup = `
+          <b>${rec.species_name || ''}</b><br>
+          <div><b>Site:</b> ${rec.survey_site || ''}</div>
+          <div><b>Surveyor:</b> ${rec.surveyor || ''}</div>
+          <div><b>Date:</b> ${rec.observation_date || ''}</div>
+          <div><b>Time:</b> ${rec.observation_time || ''}</div>
+          <div><b>Count:</b> ${rec.observation_count || ''}</div>
+          <div><b>Type:</b> ${rec.category || ''}</div>
+        `;
+        let marker = L.marker([rec.latitude, rec.longitude], {
+          icon: getSpeciesIcon(rec.category)
+        }).bindPopup(popup);
+        marker.addTo(markersLayer);
+      });
+      markersLayer.addTo(map);
+
+      // --- Define custom icons ---
+const surveyIcon = L.icon({
+  iconUrl: 'https://esyuykkooxyvmtwdyxqv.supabase.co/storage/v1/object/public/birds//home%20(1).png',
+  iconSize: [28, 28],
+  iconAnchor: [14, 28],
+  popupAnchor: [0, -24]
+});
+
+const surveyorIcon = L.icon({
+  iconUrl: 'https://esyuykkooxyvmtwdyxqv.supabase.co/storage/v1/object/public/birds//telescope%20(1).png',
+  iconSize: [26, 26],
+  iconAnchor: [13, 26],
+  popupAnchor: [0, -20]
+});
+
+// --- Survey Sites Layer ---
+let sitesLayer = L.layerGroup();
+data.forEach(row => {
+  if (row.site_name && row.latitude && row.longitude) {
+    let marker = L.marker([row.latitude, row.longitude], {icon: surveyIcon})
+      .bindPopup(`<b>Site Name:</b> ${row.site_name}<br><b>Latitude:</b> ${row.latitude}<br><b>Longitude:</b> ${row.longitude}`);
+    marker.addTo(sitesLayer);
+  }
+});
+
+// --- Surveyors Layer ---
+let surveyorLayer = L.layerGroup();
+data.forEach(row => {
+  if (row.surveyours && row.latitude && row.longitude) {
+    let marker = L.marker([row.latitude, row.longitude], {icon: surveyorIcon})
+      .bindPopup(`<b>Surveyor:</b> ${row.surveyours}<br>
+                  <b>Site:</b> ${row.site_name||''}<br>
+                  <b>Date:</b> ${row.start_date||''}`);
+    marker.addTo(surveyorLayer);
+  }
+});
+
+let overlays = {
+  "Park Boundary": parkLayer,
+  "Species Points": markersLayer,
+  "Survey Sites": sitesLayer,
+  "Surveyors": surveyorLayer
+};
+
+L.control.layers(baseMaps, overlays).addTo(map);
+
+      // --- Zoom Logic ---
+      if (records.length > 1) {
+        map.fitBounds(markersLayer.getBounds(), {padding:[40,40]});
+      } else if (records.length === 1) {
+        map.setView([records[0].latitude, records[0].longitude], 13);
+      }
+
+      // --- Database Record Count ---
+      document.getElementById("db-rec-count").innerHTML = `<b>Database Records:</b> ${records.length}`;
+    }
+
+    function renderInfoPanel(recs) {
+      // Gallery logic for multiple images
+      let galleryIdx = 0;
+      let images = [...new Set(recs.map(r => r.image_url).filter(Boolean))];
+      let imgHTML = '';
+      if (images.length > 1) {
+        imgHTML = `
+          <div style="display:flex;align-items:center;justify-content:center;gap:7px;">
+            <button onclick="prevImg()" style="font-size:1.5em;">&#8592;</button>
+            <img id="gallery-img" src="${images[0]}" class="info-img"/>
+            <button onclick="nextImg()" style="font-size:1.5em;">&#8594;</button>
+          </div>`;
+      } else {
+        imgHTML = `<img id="gallery-img" src="${images[0]||''}" class="info-img"/>`;
+      }
+      let audioHtml = `
+        <div class="audio-bar">
+          <button id="audio-toggle" style="background:none;border:none;cursor:pointer;">
+            <img id="audio-icon" style="width:38px" src="https://hjxcdmpvtronxwredseh.supabase.co/storage/v1/object/sign/birds/speaker-filled-audio-tool.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80MzM2ZjhjMC1iODRhLTQyMTQtOTMxMy0yZmYzN2Y2OGU0YzMiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJiaXJkcy9zcGVha2VyLWZpbGxlZC1hdWRpby10b29sLnBuZyIsImlhdCI6MTc1MjQ1OTk5NSwiZXhwIjoxNzgzOTk1OTk1fQ.7iemeaNY9ksVERPYveB1WBssTcArSVsjwdB-klXApOk" alt="Play" />
+          </button>
+          <audio id="species-audio" src="${recs[galleryIdx].audio_url}"></audio>
+        </div>
+      `;
+      let r = recs[0];
+      let panelHTML = `
+        <div class="info-title">${r.species_name || ''}</div>
+        ${imgHTML}
+        ${audioHtml}
+        <div class="info-section"><span class="info-label">Category:</span><span class="info-value">${r.category || ''}</span></div>
+        <div class="info-section"><span class="info-label">Species Type:</span><span class="info-value">${r.data_type || ''}</span></div>
+        <div class="info-section"><span class="info-label">Survey Site:</span><span class="info-value">${r.survey_site || ''}</span></div>
+        <div class="info-section"><span class="info-label">Observation Date:</span><span class="info-value">${r.observation_date || ''}</span></div>
+        <div class="info-section"><span class="info-label">Observation Time:</span><span class="info-value">${r.observation_time || ''}</span></div>
+        <div class="info-section"><span class="info-label">Observation Count:</span><span class="info-value">${r.observation_count || ''}</span></div>
+        <div class="desc">${r.description || ''}</div>
+      `;
+
+      document.getElementById("speciesInfo").innerHTML = panelHTML;
+
+      // --- Custom Play/Pause Logic ---
+      setTimeout(() => {
+        const audio = document.getElementById("species-audio");
+        const toggle = document.getElementById("audio-toggle");
+        const icon = document.getElementById("audio-icon");
+        let playing = false;
+        toggle.onclick = () => {
+          if (audio.paused) {
+            audio.play();
+            icon.src = "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/icons/pause-fill.svg";
+          } else {
+            audio.pause();
+            icon.src = "https://hjxcdmpvtronxwredseh.supabase.co/storage/v1/object/sign/birds/speaker-filled-audio-tool.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80MzM2ZjhjMC1iODRhLTQyMTQtOTMxMy0yZmYzN2Y2OGU0YzMiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJiaXJkcy9zcGVha2VyLWZpbGxlZC1hdWRpby10b29sLnBuZyIsImlhdCI6MTc1MjQ1OTk5NSwiZXhwIjoxNzgzOTk1OTk1fQ.7iemeaNY9ksVERPYveB1WBssTcArSVsjwdB-klXApOk";
+          }
+        };
+        audio.onended = () => icon.src = "https://hjxcdmpvtronxwredseh.supabase.co/storage/v1/object/sign/birds/speaker-filled-audio-tool.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80MzM2ZjhjMC1iODRhLTQyMTQtOTMxMy0yZmYzN2Y2OGU0YzMiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJiaXJkcy9zcGVha2VyLWZpbGxlZC1hdWRpby10b29sLnBuZyIsImlhdCI6MTc1MjQ1OTk5NSwiZXhwIjoxNzgzOTk1OTk1fQ.7iemeaNY9ksVERPYveB1WBssTcArSVsjwdB-klXApOk";
+      }, 100);
+    }
+
+    // --- CSV Download ---
+    function downloadCSV() {
+      let csv = "Species,Site,Start Date,End Date,Environment,Count,Species Type,Data Type\n";
+      records.forEach(r => {
+        csv += [
+          r.species_full_name, r.site_name, r.start_date, r.end_date, r.environment, r.count, r.species_type, r.data_type, 
+        ].map(x => `"${(x||"").toString().replace(/"/g,'""')}"`).join(",") + "\n";
+      });
+      const blob = new Blob([csv], {type:'text/csv'});
+      saveAs(blob, `${sp.species_full_name||sp.species_name}.csv`);
+    }
+
+    // --- Share Button ---
+    function shareSpecies() {
+      const url = window.location.href;
+      navigator.clipboard.writeText(url);
+      alert("Page link copied to clipboard!");
+    }
+
+    // --- Add to Compare (across tabs) ---
+    function addToCompare() {
+      let compare = JSON.parse(localStorage.getItem("compareSpecies")||"[]");
+      if (compare.length >= 2) compare = [];
+      compare.push({ ...sp, img: sp.image_url, audio: sp.audio_url });
+      localStorage.setItem("compareSpecies", JSON.stringify(compare));
+      if (compare.length === 2) showCompareModal();
+      else alert("Now open another species and click Add to Compare");
+    }
+    function showCompareModal() {
+      let compare = JSON.parse(localStorage.getItem("compareSpecies")||"[]");
+      if (compare.length < 2) return;
+      document.getElementById("compareModal").style.display = "flex";
+      document.getElementById("leftCompare").innerHTML = comparePanelHtml(compare[0]);
+      document.getElementById("rightCompare").innerHTML = comparePanelHtml(compare[1]);
+    }
+    function closeCompare() {
+      document.getElementById("compareModal").style.display = "none";
+      localStorage.removeItem("compareSpecies");
+    }
+    function comparePanelHtml(s) {
+      return `
+        <div class="info-title">${s.species_full_name || s.species_name}</div>
+        <img src="${s.img}" class="info-img"/>
+        <audio src="${s.audio}" controls style="width:90%"></audio>
+        <div class="info-section"><span class="info-label">Environment:</span><span class="info-value">${s.environment||''}</span></div>
+        <div class="info-section"><span class="info-label">Site:</span><span class="info-value">${s.site_name||''}</span></div>
+        <div class="info-section"><span class="info-label">Dates:</span><span class="info-value">${s.start_date||''} – ${s.end_date||''}</span></div>
+      `;
+    }
+
+    // --- Filter logic ---
+    document.addEventListener("DOMContentLoaded", function() {
+      document.getElementById("filterInput").addEventListener("input", function(e) {
+        let val = e.target.value.trim().toLowerCase();
+        if (!val) { renderInfoPanel(records); return; }
+        let filtered = records.filter(r =>
+          (r.site_name||"").toLowerCase().includes(val) ||
+          (r.surveyours||"").toLowerCase().includes(val) ||
+          (r.habitat_type||"").toLowerCase().includes(val)
+        );
+        if (filtered.length === 0) document.getElementById("speciesInfo").innerHTML = "<i>No results</i>";
+        else renderInfoPanel(filtered);
+      });
+    });
+
+    // --- Run main ---
+    main();
+  </script>
+</body>
+</html>

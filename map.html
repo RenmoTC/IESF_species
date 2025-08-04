@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Habitat Explorer - Bon Echo Provincial Park</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      overflow: hidden;
+    }
+
+    .container {
+      display: flex;
+      height: 100vh;
+    }
+
+    /* Sidebar Styles */
+    .sidebar {
+      width: 350px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-right: 1px solid rgba(255, 255, 255, 0.2);
+      overflow-y: auto;
+      transition: transform 0.3s ease;
+      z-index: 1000;
+    }
+
+    .sidebar.collapsed {
+      transform: translateX(-300px);
+    }
+
+    .sidebar-header {
+      background: linear-gradient(135deg, #4CAF50, #2E7D32);
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .sidebar-header h1 {
+      font-size: 1.5em;
+      margin-bottom: 5px;
+    }
+
+    .sidebar-header p {
+      opacity: 0.9;
+      font-size: 0.9em;
+    }
+
+    .sidebar-content {
+      padding: 20px;
+    }
+
+    .section {
+      margin-bottom: 25px;
+      background: rgba(255, 255, 255, 0.7);
+      border-radius: 12px;
+      padding: 15px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+
+    .section h3 {
+      color: #2E7D32;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .filter-group {
+      margin-bottom: 15px;
+    }
+
+    .filter-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    select, input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+
+    select:focus, input:focus {
+      outline: none;
+      border-color: #4CAF50;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #4CAF50, #45a049);
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s;
+      width: 100%;
+      margin: 5px 0;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+    }
+
+    .btn.secondary {
+      background: linear-gradient(135deg, #2196F3, #1976D2);
+    }
+
+    .btn.danger {
+      background: linear-gradient(135deg, #f44336, #d32f2f);
+    }
+
+    /* Kid Mode Styles */
+    .kid-mode {
+      background: linear-gradient(135deg, #FF6B6B, #4ECDC4);
+    }
+
+    .kid-mode .sidebar-header {
+      background: linear-gradient(135deg, #FF6B6B, #FFE66D);
+    }
+
+    .kid-mode .section {
+      background: rgba(255, 255, 255, 0.9);
+      border: 3px solid #FFE66D;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .stat-card {
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .stat-number {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: #2E7D32;
+    }
+
+    .stat-label {
+      font-size: 0.8em;
+      color: #666;
+    }
+
+    /* Map Styles */
+    .map-container {
+      flex: 1;
+      position: relative;
+    }
+
+    #map {
+      height: 100%;
+      width: 100%;
+    }
+
+    .map-controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+    }
+
+    .control-btn {
+      background: rgba(255, 255, 255, 0.9);
+      border: none;
+      padding: 10px;
+      margin: 2px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.3s;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+
+    .control-btn:hover {
+      background: white;
+      transform: scale(1.1);
+    }
+
+    .toggle-sidebar {
+      position: absolute;
+      top: 50%;
+      left: 10px;
+      transform: translateY(-50%);
+      z-index: 1001;
+    }
+
+    /* Habitat Legend */
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 2px 15px rgba(0,0,0,0.2);
+      max-width: 200px;
+    }
+
+    .legend h4 {
+      margin-bottom: 10px;
+      color: #2E7D32;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin: 5px 0;
+      font-size: 0.9em;
+    }
+
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      margin-right: 8px;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* KPI Cards */
+    .kpi-container {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .kpi-card {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      padding: 15px 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      text-align: center;
+      min-width: 120px;
+      border: 2px solid transparent;
+      transition: all 0.3s ease;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 25px rgba(0,0,0,0.2);
+      border-color: #4CAF50;
+    }
+
+    .kid-mode .kpi-card {
+      border: 3px solid #FFE66D;
+      background: rgba(255, 255, 255, 0.98);
+    }
+
+    .kid-mode .kpi-card:hover {
+      border-color: #FF6B6B;
+      transform: translateY(-3px) scale(1.05);
+    }
+
+    .kpi-number {
+      font-size: 1.8em;
+      font-weight: bold;
+      color: #2E7D32;
+      margin-bottom: 5px;
+    }
+
+    .kid-mode .kpi-number {
+      color: #FF6B6B;
+      font-size: 2em;
+    }
+
+    .kpi-label {
+      font-size: 0.85em;
+      color: #666;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .kid-mode .kpi-label {
+      color: #4ECDC4;
+      font-weight: bold;
+    }
+
+    /* Animations */
+    @keyframes gentlePulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    .kid-mode .kpi-card {
+      animation: gentlePulse 3s ease-in-out infinite;
+    }
+
+    .kid-mode .kpi-card:nth-child(2) {
+      animation-delay: 0.5s;
+    }
+
+    .kid-mode .kpi-card:nth-child(3) {
+      animation-delay: 1s;
+    }
+
+    .kid-mode .kpi-card:nth-child(4) {
+      animation-delay: 1.5s;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .sidebar { width: 100%; }
+      .container { flex-direction: column; }
+      .map-container { height: 60vh; }
+      
+      .kpi-container {
+        position: relative;
+        top: 10px;
+        left: auto;
+        transform: none;
+        margin: 10px;
+        justify-content: center;
+      }
+      
+      .kpi-card {
+        min-width: 80px;
+        padding: 10px 15px;
+      }
+      
+      .kpi-number {
+        font-size: 1.4em;
+      }
+      
+      .kpi-label {
+        font-size: 0.75em;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="container">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h1><i class="fas fa-leaf"></i> Habitat Explorer</h1>
+        <p>Bon Echo Provincial Park</p>
+      </div>
+      
+      <div class="sidebar-content">
+        <!-- Mode Toggle -->
+        <div class="section">
+          <h3><i class="fas fa-toggle-on"></i> Viewing Mode</h3>
+          <button class="btn" id="kidModeBtn" onclick="toggleKidMode()">
+            <i class="fas fa-child"></i> Switch to Kid Mode
+          </button>
+        </div>
+
+        <!-- Filters -->
+        <div class="section">
+          <h3><i class="fas fa-filter"></i> Filters</h3>
+          
+          <div class="filter-group">
+            <label for="habitatFilter">Habitat Type</label>
+            <select id="habitatFilter">
+              <option value="">All Habitats</option>
+            </select>
+          </div>
+          
+          <div class="filter-group">
+            <label for="zoneFilter">Management Zone</label>
+            <select id="zoneFilter">
+              <option value="">All Zones</option>
+            </select>
+          </div>
+          
+          <div class="filter-group">
+            <label for="dateFilter">Survey Year</label>
+            <select id="dateFilter">
+              <option value="">All Years</option>
+            </select>
+          </div>
+          
+          <button class="btn secondary" onclick="clearFilters()">
+            <i class="fas fa-eraser"></i> Clear Filters
+          </button>
+        </div>
+
+
+
+        <!-- Data Export -->
+        <div class="section">
+          <h3><i class="fas fa-download"></i> Data Export</h3>
+          <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+            Download filtered data for research purposes
+          </p>
+          
+          <button class="btn" onclick="downloadCSV()">
+            <i class="fas fa-file-csv"></i> Download CSV
+          </button>
+          
+          <button class="btn secondary" onclick="downloadJSON()">
+            <i class="fas fa-file-code"></i> Download JSON
+          </button>
+          
+          <button class="btn" onclick="generateReport()">
+            <i class="fas fa-file-alt"></i> Generate Report
+          </button>
+        </div>
+
+        <!-- Kid Mode Content -->
+        <div class="section" id="kidSection" style="display: none;">
+          <h3><i class="fas fa-gamepad"></i> Fun Activities</h3>
+          
+          <button class="btn" onclick="startHabitatQuiz()">
+            <i class="fas fa-question-circle"></i> Habitat Quiz
+          </button>
+          
+          <button class="btn secondary" onclick="findAnimals()">
+            <i class="fas fa-paw"></i> Find Animals Game
+          </button>
+          
+          <button class="btn" onclick="showFunFacts()">
+            <i class="fas fa-lightbulb"></i> Fun Facts
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map Container -->
+    <div class="map-container">
+      <!-- KPI Cards -->
+      <div class="kpi-container">
+        <div class="kpi-card">
+          <div class="kpi-number" id="totalPoints">0</div>
+          <div class="kpi-label">Total Points</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-number" id="visiblePoints">0</div>
+          <div class="kpi-label">Visible</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-number" id="habitatTypes">0</div>
+          <div class="kpi-label">Habitats</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-number" id="surveyYears">0</div>
+          <div class="kpi-label">Years</div>
+        </div>
+      </div>
+
+      <button class="control-btn toggle-sidebar" onclick="toggleSidebar()">
+        <i class="fas fa-bars"></i>
+      </button>
+      
+      <div class="map-controls">
+        <button class="control-btn" onclick="zoomToAll()" title="Zoom to All">
+          <i class="fas fa-expand-arrows-alt"></i>
+        </button>
+        <button class="control-btn" onclick="toggleLegend()" title="Toggle Legend">
+          <i class="fas fa-list"></i>
+        </button>
+        <button class="control-btn" onclick="takeScreenshot()" title="Screenshot">
+          <i class="fas fa-camera"></i>
+        </button>
+      </div>
+      
+      <div id="map"></div>
+      
+      <!-- Legend -->
+      <div class="legend" id="legend">
+        <h4><i class="fas fa-map-marker-alt"></i> Habitat Types</h4>
+        <div id="legendContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://unpkg.com/leaflet-omnivore@0.3.4/leaflet-omnivore.min.js"></script>
+
+  <script>
+    // Global variables
+    let map, markers, allData = [], filteredData = [];
+    let isKidMode = false;
+    
+    const habitatColors = {
+      Wetland: '#2196F3',
+      Forest: '#4CAF50', 
+      Bog: '#8D6E63',
+      Meadow: '#FF9800',
+      Swamp: '#3F51B5',
+      Fen: '#009688',
+      Grassland: '#8BC34A',
+      'Mixed Forest': '#689F38',
+      Other: '#607D8B'
+    };
+
+    // Initialize map
+    function initMap() {
+      map = L.map('map').setView([44.9, -77.9], 13);
+      
+      // Add tile layer with kid-friendly option
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+      
+      markers = L.layerGroup().addTo(map);
+      
+      // Load park boundary
+      loadParkBoundary();
+      
+      // Load data
+      loadData();
+    }
+
+    // Load park boundary
+    function loadParkBoundary() {
+      const kmlUrl = 'https://raw.githubusercontent.com/RenmoTC/IESF_species/refs/heads/main/Park%20Boundary.kml';
+      
+      omnivore.kml(kmlUrl)
+        .on('ready', function () {
+          this.setStyle({
+            color: isKidMode ? '#FF6B6B' : '#2E7D32',
+            weight: 3,
+            fillOpacity: 0.1,
+            dashArray: '10, 5'
+          });
+          map.fitBounds(this.getBounds());
+        })
+        .addTo(map);
+    }
+
+    // Load and process data
+    async function loadData() {
+      try {
+        const url = "https://raw.githubusercontent.com/Arpan-shrma/iesf_datasets/refs/heads/main/iesf_dashboard_habitat_inventory.csv";
+        const response = await fetch(url);
+        const text = await response.text();
+        const parsed = Papa.parse(text, { 
+          header: true,
+          skipEmptyLines: true,
+          dynamicTyping: true
+        });
+        
+        allData = parsed.data.filter(row => 
+          row.latitude && row.longitude && 
+          !isNaN(parseFloat(row.latitude)) && 
+          !isNaN(parseFloat(row.longitude))
+        );
+        
+        populateFilters();
+        updateStats();
+        renderMarkers();
+        updateLegend();
+        
+      } catch (error) {
+        console.error('Error loading data:', error);
+        alert('Error loading habitat data. Please try again later.');
+      }
+    }
+
+    // Populate filter dropdowns
+    function populateFilters() {
+      const habitats = [...new Set(allData.map(d => d.habitat_type).filter(Boolean))].sort();
+      const zones = [...new Set(allData.map(d => d.management_zone).filter(Boolean))].sort();
+      const years = [...new Set(allData.map(d => {
+        if (d.survey_date) {
+          const year = new Date(d.survey_date).getFullYear();
+          return isNaN(year) ? null : year;
+        }
+        return null;
+      }).filter(Boolean))].sort((a, b) => b - a);
+
+      populateSelect('habitatFilter', habitats);
+      populateSelect('zoneFilter', zones);
+      populateSelect('dateFilter', years);
+    }
+
+    function populateSelect(selectId, options) {
+      const select = document.getElementById(selectId);
+      select.innerHTML = select.children[0].outerHTML; // Keep first option
+      
+      options.forEach(option => {
+        const opt = document.createElement('option');
+        opt.value = option;
+        opt.textContent = option;
+        select.appendChild(opt);
+      });
+    }
+
+    // Filter data based on current selections
+    function getFilteredData() {
+      const habitatFilter = document.getElementById('habitatFilter').value;
+      const zoneFilter = document.getElementById('zoneFilter').value;
+      const dateFilter = document.getElementById('dateFilter').value;
+
+      return allData.filter(row => {
+        if (habitatFilter && row.habitat_type !== habitatFilter) return false;
+        if (zoneFilter && row.management_zone !== zoneFilter) return false;
+        if (dateFilter && row.survey_date) {
+          const year = new Date(row.survey_date).getFullYear();
+          if (year != dateFilter) return false;
+        }
+        return true;
+      });
+    }
+
+    // Render markers on map
+    function renderMarkers() {
+      markers.clearLayers();
+      filteredData = getFilteredData();
+
+      filteredData.forEach((row, index) => {
+        const lat = parseFloat(row.latitude);
+        const lon = parseFloat(row.longitude);
+        const habitat = row.habitat_type || 'Other';
+        
+        const popup = `
+          <div style="font-family: sans-serif;">
+            <h4 style="color: ${habitatColors[habitat] || '#607D8B'}; margin: 0 0 10px 0;">
+              <i class="fas fa-leaf"></i> ${habitat}
+            </h4>
+            <p><strong>Zone:</strong> ${row.management_zone || 'Unknown'}</p>
+            <p><strong>Survey Date:</strong> ${row.survey_date || 'Unknown'}</p>
+            <p><strong>Data Type:</strong> ${row.data_type || 'Unknown'}</p>
+            ${isKidMode ? `<p style="color: #FF6B6B;"><strong>Cool Fact:</strong> ${getHabitatFact(habitat)}</p>` : ''}
+          </div>
+        `;
+
+        const marker = L.circleMarker([lat, lon], {
+          radius: isKidMode ? 8 : 6,
+          color: habitatColors[habitat] || '#607D8B',
+          weight: isKidMode ? 3 : 2,
+          fillOpacity: isKidMode ? 0.9 : 0.75
+        }).bindPopup(popup);
+
+        // Simplified kid mode interaction - no animations that cause hanging
+        if (isKidMode) {
+          marker.on('click', () => {
+            // Simple visual feedback without complex animations
+            marker.setStyle({ fillOpacity: 1 });
+            setTimeout(() => {
+              marker.setStyle({ fillOpacity: 0.9 });
+            }, 200);
+          });
+        }
+
+        marker.addTo(markers);
+      });
+
+      updateStats();
+    }
+
+    // Update statistics
+    function updateStats() {
+      filteredData = getFilteredData();
+      const habitatTypes = new Set(filteredData.map(d => d.habitat_type).filter(Boolean)).size;
+      const surveyYears = new Set(filteredData.map(d => {
+        if (d.survey_date) {
+          const year = new Date(d.survey_date).getFullYear();
+          return isNaN(year) ? null : year;
+        }
+        return null;
+      }).filter(Boolean)).size;
+
+      document.getElementById('totalPoints').textContent = allData.length;
+      document.getElementById('visiblePoints').textContent = filteredData.length;
+      document.getElementById('habitatTypes').textContent = habitatTypes;
+      document.getElementById('surveyYears').textContent = surveyYears;
+    }
+
+    // Update legend
+    function updateLegend() {
+      const legendContent = document.getElementById('legendContent');
+      legendContent.innerHTML = '';
+      
+      Object.entries(habitatColors).forEach(([habitat, color]) => {
+        const item = document.createElement('div');
+        item.className = 'legend-item';
+        item.innerHTML = `
+          <div class="legend-color" style="background-color: ${color}"></div>
+          <span>${habitat}</span>
+        `;
+        legendContent.appendChild(item);
+      });
+    }
+
+    // Event listeners
+    document.getElementById('habitatFilter').addEventListener('change', renderMarkers);
+    document.getElementById('zoneFilter').addEventListener('change', renderMarkers);
+    document.getElementById('dateFilter').addEventListener('change', renderMarkers);
+
+    // Utility functions
+    function clearFilters() {
+      document.getElementById('habitatFilter').value = '';
+      document.getElementById('zoneFilter').value = '';
+      document.getElementById('dateFilter').value = '';
+      renderMarkers();
+    }
+
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('collapsed');
+    }
+
+    function toggleLegend() {
+      const legend = document.getElementById('legend');
+      legend.style.display = legend.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function zoomToAll() {
+      if (filteredData.length > 0) {
+        const group = new L.featureGroup(markers.getLayers());
+        map.fitBounds(group.getBounds().pad(0.1));
+      }
+    }
+
+    function toggleKidMode() {
+      isKidMode = !isKidMode;
+      const container = document.getElementById('container');
+      const btn = document.getElementById('kidModeBtn');
+      const kidSection = document.getElementById('kidSection');
+      
+      if (isKidMode) {
+        container.classList.add('kid-mode');
+        btn.innerHTML = '<i class="fas fa-user-graduate"></i> Switch to Research Mode';
+        kidSection.style.display = 'block';
+      } else {
+        container.classList.remove('kid-mode');
+        btn.innerHTML = '<i class="fas fa-child"></i> Switch to Kid Mode';
+        kidSection.style.display = 'none';
+      }
+      
+      renderMarkers();
+      loadParkBoundary();
+    }
+
+    // Data export functions
+    function downloadCSV() {
+      const csv = Papa.unparse(filteredData);
+      downloadFile(csv, 'habitat_data.csv', 'text/csv');
+    }
+
+    function downloadJSON() {
+      const json = JSON.stringify(filteredData, null, 2);
+      downloadFile(json, 'habitat_data.json', 'application/json');
+    }
+
+    function downloadFile(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function generateReport() {
+      const report = `
+# Habitat Inventory Report - Bon Echo Provincial Park
+
+## Summary
+- Total Data Points: ${allData.length}
+- Filtered Points: ${filteredData.length}
+- Habitat Types: ${new Set(filteredData.map(d => d.habitat_type).filter(Boolean)).size}
+- Survey Years: ${new Set(filteredData.map(d => {
+  if (d.survey_date) {
+    const year = new Date(d.survey_date).getFullYear();
+    return isNaN(year) ? null : year;
+  }
+  return null;
+}).filter(Boolean)).size}
+
+## Habitat Distribution
+${Object.entries(
+  filteredData.reduce((acc, row) => {
+    const habitat = row.habitat_type || 'Other';
+    acc[habitat] = (acc[habitat] || 0) + 1;
+    return acc;
+  }, {})
+).map(([habitat, count]) => `- ${habitat}: ${count} points`).join('\n')}
+
+Generated on: ${new Date().toLocaleString()}
+      `;
+      
+      downloadFile(report, 'habitat_report.md', 'text/markdown');
+    }
+
+    // Kid mode functions
+    function getHabitatFact(habitat) {
+      const facts = {
+        'Wetland': 'Wetlands are nature\'s water filters!',
+        'Forest': 'Trees can live for hundreds of years!',
+        'Bog': 'Bogs are like nature\'s sponges!',
+        'Meadow': 'Meadows are home to beautiful butterflies!',
+        'Swamp': 'Swamps are like underwater forests!',
+        'Fen': 'Fens are fed by groundwater!',
+        'Other': 'Every habitat is special and unique!'
+      };
+      return facts[habitat] || facts['Other'];
+    }
+
+    function playSound(habitat) {
+      // Simple visual feedback without complex DOM manipulation
+      console.log(`🎵 Playing sound for ${habitat}!`);
+    }
+
+    function startHabitatQuiz() {
+      alert('🌿 Quiz Time! Click on a Forest habitat on the map to continue!');
+    }
+
+    function findAnimals() {
+      alert('🐾 Animal Hunt! Look for Wetland habitats - that\'s where you might find frogs and birds!');
+    }
+
+    function showFunFacts() {
+      const facts = [
+        '🌳 Did you know? Some trees in Bon Echo are over 200 years old!',
+        '🦌 Deer love to visit meadow habitats for tasty plants!',
+        '🐸 Frogs need wetlands to lay their eggs!',
+        '🦋 Butterflies help plants by carrying pollen from flower to flower!'
+      ];
+      alert(facts[Math.floor(Math.random() * facts.length)]);
+    }
+
+    function takeScreenshot() {
+      alert('📸 Screenshot feature would capture the current map view!');
+    }
+
+    // Initialize the application
+    initMap();
+  </script>
+</body>
+</html>

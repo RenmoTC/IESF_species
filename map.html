@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Habitat Explorer - Bon Echo Provincial Park</title>
+  <title>Habitat Inventory</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
   
@@ -361,8 +361,8 @@
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <h1><i class="fas fa-leaf"></i> Habitat Explorer</h1>
-        <p>Bon Echo Provincial Park</p>
+        <h1><i class="fas fa-leaf"></i> Habitat Inventory</h1>
+        <p>IESF Dashboard</p>
       </div>
       
       <div class="sidebar-content">
@@ -639,9 +639,14 @@
             <h4 style="color: ${habitatColors[habitat] || '#607D8B'}; margin: 0 0 10px 0;">
               <i class="fas fa-leaf"></i> ${habitat}
             </h4>
-            <p><strong>Zone:</strong> ${row.management_zone || 'Unknown'}</p>
+            <p><strong>Survey Site:</strong> ${row.survey_site || 'Unknown'}</p>
+            <p><strong>Habitat Number:</strong> ${row.habitat_number || 'Unknown'}</p>
+            <p><strong>Polygon Number:</strong> ${row.polygon_number || 'Unknown'}</p>
+            <p><strong>Habitat Type:</strong> ${row.habitat_type || 'Unknown'}</p>
+            <p><strong>Surveyor:</strong> ${row.surveyor_initials || 'Unknown'}</p>
+            <p><strong>category:</strong> ${row.category || 'Unknown'}</p>
+            <p><strong>Notes:</strong> ${row.notes || 'Unknown'}</p>
             <p><strong>Survey Date:</strong> ${row.survey_date || 'Unknown'}</p>
-            <p><strong>Data Type:</strong> ${row.data_type || 'Unknown'}</p>
             ${isKidMode ? `<p style="color: #FF6B6B;"><strong>Cool Fact:</strong> ${getHabitatFact(habitat)}</p>` : ''}
           </div>
         `;
@@ -776,7 +781,6 @@
 
     function generateReport() {
       const report = `
-# Habitat Inventory Report - Bon Echo Provincial Park
 
 ## Summary
 - Total Data Points: ${allData.length}
